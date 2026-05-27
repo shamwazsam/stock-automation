@@ -1,0 +1,26 @@
+name: Daily Weekday Broker Stock Report
+
+on:
+  schedule:
+    # 4:00 AM UTC converts exactly to 9:30 AM IST
+    # '1-5' restricts the execution strictly to Monday through Friday
+    - cron: '0 4 * * 1-5'
+  workflow_dispatch: # Keeps the manual play button active
+
+jobs:
+  run-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install pandas yagmail
+
+      - name: Run Script
+        run: python stock_reporter.py
