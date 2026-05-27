@@ -24,3 +24,6 @@ jobs:
 
       - name: Run Script
         run: python stock_reporter.py
+        
+      - name: Install Dependencies
+        run: pip install pandas yagmail beautifulsoup4 lxml requests
