@@ -76,7 +76,7 @@ def fetch_moneycontrol_buys():
     try:
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
-            soup = BeautifulSoup(response.content, "xml")
+            soup = BeautifulSoup(response.content, "html.parser")
             items = soup.find_all("item")
             for item in items:
                 title = item.title.text if item.title else ""
@@ -130,29 +130,91 @@ def fetch_icici_direct_buys():
         print(f"Error fetching ICICI Direct coverage tables dynamically: {e}")
     return stocks
 
+def fetch_trendlyne_buys():
+    """
+    Dynamically pulls all BUY recommendations from Trendlyne
+    Returns dict with {stock_name: {'target': price, 'current': price, 'gain': %, 'source': 'Trendlyne'}}
+    """
+    stocks = {}
+    url = "https://trendlyne.com/research-reports/buy/"
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
+            rows = soup.find_all("tr")
+            for row in rows:
+                cells = row.find_all("td")
+                if len(cells) >= 3:
+                    stock_name = cells[0].text.strip()
+                    cleaned = clean_stock_name(stock_name)
+                    if cleaned:
+                        target = extract_profit_target(row.text)
+                        current = get_current_stock_price(cleaned)
+                        gain = calculate_gain_percentage(current, target)
+                        stocks[cleaned] = {
+                            'target': target,
+                            'current': current,
+                            'gain': gain,
+                            'source': 'Trendlyne'
+                        }
+    except Exception as e:
+        print(f"Error fetching Trendlyne research reports dynamically: {e}")
+    return stocks
+
+def fetch_axis_direct_buys():
+    """
+    Dynamically pulls all investment ideas from Axis Direct SimpleHAI
+    Returns dict with {stock_name: {'target': price, 'current': price, 'gain': %, 'source': 'Axis Direct'}}
+    """
+    stocks = {}
+    url = "https://simplehai.axisdirect.in/research/research-ideas/investment-ideas"
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, "html.parser")
+            rows = soup.find_all("tr")
+            for row in rows:
+                cells = row.find_all("td")
+                if len(cells) >= 3:
+                    stock_name = cells[0].text.strip()
+                    rating = cells[1].text.strip().upper() if len(cells) > 1 else ""
+                    if "BUY" in rating or "ACCUMULATE" in rating:
+                        cleaned = clean_stock_name(stock_name)
+                        if cleaned:
+                            target = extract_profit_target(row.text)
+                            current = get_current_stock_price(cleaned)
+                            gain = calculate_gain_percentage(current, target)
+                            stocks[cleaned] = {
+                                'target': target,
+                                'current': current,
+                                'gain': gain,
+                                'source': 'Axis Direct'
+                            }
+    except Exception as e:
+        print(f"Error fetching Axis Direct investment ideas dynamically: {e}")
+    return stocks
+
 def fetch_consensus_report():
     print("Initiating automated pipeline: Querying external live endpoints...")
     
     mc_buys = fetch_moneycontrol_buys()
     icici_buys = fetch_icici_direct_buys()
+    trendlyne_buys = fetch_trendlyne_buys()
+    axis_buys = fetch_axis_direct_buys()
     
     print(f"Successfully scraped {len(mc_buys)} live targets from Moneycontrol.")
     print(f"Successfully scraped {len(icici_buys)} live targets from ICICI Direct.")
+    print(f"Successfully scraped {len(trendlyne_buys)} live targets from Trendlyne.")
+    print(f"Successfully scraped {len(axis_buys)} live targets from Axis Direct.")
     
-    # Combine all recommendations from both sources
+    # Combine all recommendations from all sources
     all_buys = {}
     all_buys.update(mc_buys)
     all_buys.update(icici_buys)
-    
-    # If no data from live sources, use sample data for testing
-    if not all_buys:
-        print("⚠️  No live data fetched. Using sample recommendations for testing...")
-        all_buys = {
-            "HDFC BANK": {"target": 1800, "current": 1650, "gain": 9.09, "source": "Sample"},
-            "RELIANCE": {"target": 1500, "current": 1300, "gain": 15.38, "source": "Sample"},
-            "TCS": {"target": 4200, "current": 3900, "gain": 7.69, "source": "Sample"},
-            "INFY": {"target": 2100, "current": 1800, "gain": 16.67, "source": "Sample"},
-        }
+    all_buys.update(trendlyne_buys)
+    all_buys.update(axis_buys)
     
     # Sort by gain percentage (highest first) - highest profit first
     sorted_buys = sorted(all_buys.items(), key=lambda x: x[1]['gain'] if x[1]['gain'] else -999, reverse=True)
@@ -222,7 +284,7 @@ def send_email(stock_recommendations):
             {rows}
         </table>
         <p style="font-size:12px; color:#666; margin-top:20px;">
-            <i>Data pulled from: Moneycontrol, ICICI Direct | Sorted by potential gain % (highest first)</i><br>
+            <i>Data pulled from: Moneycontrol, ICICI Direct, Trendlyne, Axis Direct | Sorted by potential gain % (highest first)</i><br>
             <i>🔥🚀 High Gain (≥20%) | ✅ Moderate Gain (10-20%) | ⚡ Standard Gain (&lt;10%)</i>
         </p>
         """
