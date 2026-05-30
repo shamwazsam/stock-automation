@@ -1,0 +1,13 @@
+zversion: 2
+updates:
+  # Check for GitHub Actions updates (like checkout and setup-python)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly" # Checks every week for new versions
+
+  # Check for Python dependencies updates (listed in requirements.txt or Pipfile)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
