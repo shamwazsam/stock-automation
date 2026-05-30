@@ -1,4 +1,5 @@
 import os
+import json
 import yagmail
 import pandas as pd
 from google.oauth2 import service_account
@@ -14,7 +15,7 @@ RECEIVER_EMAIL = "shamwazsam@gmail.com"
 def get_sheet_data():
     """Fetches data from Google Sheets using a Service Account."""
     # Define the scope required to read Google Sheets
-    SCOPES = ['https://googleapis.com']
+    SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
     
     # Load credentials from the environment variable (configured in GitHub Secrets)
     creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -23,7 +24,7 @@ def get_sheet_data():
         
     # Authenticate using the service account key
     creds = service_account.Credentials.from_service_account_info(
-        eval(creds_json), scopes=SCOPES
+        json.loads(creds_json), scopes=SCOPES
     )
     
     # Build the Google Sheets API client
@@ -46,6 +47,9 @@ def send_email(dataframe):
     """Sends the DataFrame styled as an HTML table via email."""
     sender = os.environ.get("SENDER_EMAIL")
     password = os.environ.get("APP_PASSWORD")
+    
+    if not sender or not password:
+        raise ValueError("Missing SENDER_EMAIL or APP_PASSWORD environment variables.")
     
     # Convert DataFrame to a clean, styled HTML table
     html_table = dataframe.to_html(index=False, classes='table table-striped')
