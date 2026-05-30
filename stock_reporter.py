@@ -4,6 +4,7 @@ import yagmail
 import requests
 from bs4 import BeautifulSoup
 import json
+from datetime import datetime
 
 def clean_stock_name(text):
     """
@@ -34,28 +35,19 @@ def extract_profit_target(text):
             return None
     return None
 
-def get_current_stock_price(stock_name):
+def extract_current_price(text):
     """
-    Fetches current stock price using NSE/BSE data
+    Extracts current price from text
     """
-    try:
-        # Try using NSE API or mock data for now
-        url = f"https://api.example.com/stock/{stock_name}"
-        # For now, return a mock value - in production, integrate with real API
-        # Common ranges for Indian stocks
-        common_prices = {
-            "HDFC BANK": 1650,
-            "RELIANCE": 1300,
-            "TCS": 3900,
-            "INFY": 1800,
-            "ICICIBANK": 800,
-            "AXIS BANK": 900,
-            "SBIN": 600,
-        }
-        return common_prices.get(stock_name, None)
-    except Exception as e:
-        print(f"Error fetching current price for {stock_name}: {e}")
+    if not text:
         return None
+    numbers = re.findall(r'\b\d+(?:\.\d+)?\b', text)
+    if numbers:
+        try:
+            return float(numbers[0])
+        except:
+            return None
+    return None
 
 def calculate_gain_percentage(current_price, target_price):
     """
@@ -71,63 +63,90 @@ def fetch_moneycontrol_buys():
     Returns dict with {stock_name: {'target': price, 'current': price, 'gain': %, 'source': 'Moneycontrol'}}
     """
     stocks = {}
-    url = "https://moneycontrol.com"
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    url = "https://www.moneycontrol.com/markets/recommendations/"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
+        print("Fetching Moneycontrol recommendations...")
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, "html.parser")
-            items = soup.find_all("item")
-            for item in items:
-                title = item.title.text if item.title else ""
-                if "BUY" in title.upper() or "ACCUMULATE" in title.upper():
-                    stock_name = clean_stock_name(title.split(";")[0])
-                    if stock_name:
-                        target = extract_profit_target(title)
-                        current = get_current_stock_price(stock_name)
-                        gain = calculate_gain_percentage(current, target)
-                        stocks[stock_name] = {
-                            'target': target,
-                            'current': current,
-                            'gain': gain,
-                            'source': 'Moneycontrol'
-                        }
+            # Look for recommendation rows in tables
+            tables = soup.find_all("table")
+            for table in tables:
+                rows = table.find_all("tr")
+                for row in rows:
+                    cells = row.find_all("td")
+                    if len(cells) >= 4:
+                        try:
+                            stock_name = cells[0].text.strip()
+                            recommendation = cells[1].text.strip().upper()
+                            current_text = cells[2].text.strip()
+                            target_text = cells[3].text.strip()
+                            
+                            if "BUY" in recommendation or "ACCUMULATE" in recommendation:
+                                cleaned = clean_stock_name(stock_name)
+                                if cleaned:
+                                    current = extract_current_price(current_text)
+                                    target = extract_profit_target(target_text)
+                                    gain = calculate_gain_percentage(current, target)
+                                    if current and target and gain:
+                                        stocks[cleaned] = {
+                                            'target': target,
+                                            'current': current,
+                                            'gain': gain,
+                                            'source': 'Moneycontrol'
+                                        }
+                        except:
+                            pass
+        print(f"✓ Successfully scraped {len(stocks)} BUY recommendations from Moneycontrol")
     except Exception as e:
-        print(f"Error fetching Moneycontrol data feed dynamically: {e}")
+        print(f"✗ Error fetching Moneycontrol: {e}")
     return stocks
 
 def fetch_icici_direct_buys():
     """
-    Dynamically pulls all BUY recommendations from ICICI Securities
+    Dynamically pulls all BUY recommendations from ICICI Direct
     Returns dict with {stock_name: {'target': price, 'current': price, 'gain': %, 'source': 'ICICI Direct'}}
     """
     stocks = {}
-    url = "https://www.icicidirect.com/mailcontent/co_reports.html"
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    url = "https://www.icicidirect.com/research/equity"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
+        print("Fetching ICICI Direct recommendations...")
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, "html.parser")
-            rows = soup.find_all("tr")
-            for row in rows:
-                cells = row.find_all("td")
-                if len(cells) >= 5:
-                    stock_name = cells[0].text.strip()
-                    rating = cells[4].text.strip().upper()
-                    if "BUY" in rating:
-                        cleaned = clean_stock_name(stock_name)
-                        if cleaned:
-                            target = extract_profit_target(cells[4].text)
-                            current = get_current_stock_price(cleaned)
-                            gain = calculate_gain_percentage(current, target)
-                            stocks[cleaned] = {
-                                'target': target,
-                                'current': current,
-                                'gain': gain,
-                                'source': 'ICICI Direct'
-                            }
+            # Look for recommendation data in tables
+            tables = soup.find_all("table")
+            for table in tables:
+                rows = table.find_all("tr")
+                for row in rows:
+                    cells = row.find_all("td")
+                    if len(cells) >= 5:
+                        try:
+                            stock_name = cells[0].text.strip()
+                            rating = cells[1].text.strip().upper() if len(cells) > 1 else ""
+                            current_text = cells[2].text.strip() if len(cells) > 2 else ""
+                            target_text = cells[3].text.strip() if len(cells) > 3 else ""
+                            
+                            if "BUY" in rating:
+                                cleaned = clean_stock_name(stock_name)
+                                if cleaned:
+                                    current = extract_current_price(current_text)
+                                    target = extract_profit_target(target_text)
+                                    gain = calculate_gain_percentage(current, target)
+                                    if current and target and gain:
+                                        stocks[cleaned] = {
+                                            'target': target,
+                                            'current': current,
+                                            'gain': gain,
+                                            'source': 'ICICI Direct'
+                                        }
+                        except:
+                            pass
+        print(f"✓ Successfully scraped {len(stocks)} BUY recommendations from ICICI Direct")
     except Exception as e:
-        print(f"Error fetching ICICI Direct coverage tables dynamically: {e}")
+        print(f"✗ Error fetching ICICI Direct: {e}")
     return stocks
 
 def fetch_trendlyne_buys():
@@ -137,29 +156,43 @@ def fetch_trendlyne_buys():
     """
     stocks = {}
     url = "https://trendlyne.com/research-reports/buy/"
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
+        print("Fetching Trendlyne recommendations...")
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, "html.parser")
-            rows = soup.find_all("tr")
-            for row in rows:
-                cells = row.find_all("td")
-                if len(cells) >= 3:
-                    stock_name = cells[0].text.strip()
-                    cleaned = clean_stock_name(stock_name)
-                    if cleaned:
-                        target = extract_profit_target(row.text)
-                        current = get_current_stock_price(cleaned)
-                        gain = calculate_gain_percentage(current, target)
-                        stocks[cleaned] = {
-                            'target': target,
-                            'current': current,
-                            'gain': gain,
-                            'source': 'Trendlyne'
-                        }
+            # Look for research report rows
+            tables = soup.find_all("table")
+            for table in tables:
+                rows = table.find_all("tr")
+                for row in rows:
+                    cells = row.find_all("td")
+                    if len(cells) >= 4:
+                        try:
+                            stock_name = cells[0].text.strip()
+                            rating = cells[1].text.strip().upper() if len(cells) > 1 else ""
+                            current_text = cells[2].text.strip() if len(cells) > 2 else ""
+                            target_text = cells[3].text.strip() if len(cells) > 3 else ""
+                            
+                            if "BUY" in rating or "ACCUMULATE" in rating:
+                                cleaned = clean_stock_name(stock_name)
+                                if cleaned:
+                                    current = extract_current_price(current_text)
+                                    target = extract_profit_target(target_text)
+                                    gain = calculate_gain_percentage(current, target)
+                                    if current and target and gain:
+                                        stocks[cleaned] = {
+                                            'target': target,
+                                            'current': current,
+                                            'gain': gain,
+                                            'source': 'Trendlyne'
+                                        }
+                        except:
+                            pass
+        print(f"✓ Successfully scraped {len(stocks)} BUY recommendations from Trendlyne")
     except Exception as e:
-        print(f"Error fetching Trendlyne research reports dynamically: {e}")
+        print(f"✗ Error fetching Trendlyne: {e}")
     return stocks
 
 def fetch_axis_direct_buys():
@@ -169,45 +202,54 @@ def fetch_axis_direct_buys():
     """
     stocks = {}
     url = "https://simplehai.axisdirect.in/research/research-ideas/investment-ideas"
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
+        print("Fetching Axis Direct recommendations...")
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, "html.parser")
-            rows = soup.find_all("tr")
-            for row in rows:
-                cells = row.find_all("td")
-                if len(cells) >= 3:
-                    stock_name = cells[0].text.strip()
-                    rating = cells[1].text.strip().upper() if len(cells) > 1 else ""
-                    if "BUY" in rating or "ACCUMULATE" in rating:
-                        cleaned = clean_stock_name(stock_name)
-                        if cleaned:
-                            target = extract_profit_target(row.text)
-                            current = get_current_stock_price(cleaned)
-                            gain = calculate_gain_percentage(current, target)
-                            stocks[cleaned] = {
-                                'target': target,
-                                'current': current,
-                                'gain': gain,
-                                'source': 'Axis Direct'
-                            }
+            # Look for investment ideas in tables
+            tables = soup.find_all("table")
+            for table in tables:
+                rows = table.find_all("tr")
+                for row in rows:
+                    cells = row.find_all("td")
+                    if len(cells) >= 4:
+                        try:
+                            stock_name = cells[0].text.strip()
+                            rating = cells[1].text.strip().upper() if len(cells) > 1 else ""
+                            current_text = cells[2].text.strip() if len(cells) > 2 else ""
+                            target_text = cells[3].text.strip() if len(cells) > 3 else ""
+                            
+                            if "BUY" in rating or "ACCUMULATE" in rating:
+                                cleaned = clean_stock_name(stock_name)
+                                if cleaned:
+                                    current = extract_current_price(current_text)
+                                    target = extract_profit_target(target_text)
+                                    gain = calculate_gain_percentage(current, target)
+                                    if current and target and gain:
+                                        stocks[cleaned] = {
+                                            'target': target,
+                                            'current': current,
+                                            'gain': gain,
+                                            'source': 'Axis Direct'
+                                        }
+                        except:
+                            pass
+        print(f"✓ Successfully scraped {len(stocks)} BUY recommendations from Axis Direct")
     except Exception as e:
-        print(f"Error fetching Axis Direct investment ideas dynamically: {e}")
+        print(f"✗ Error fetching Axis Direct: {e}")
     return stocks
 
 def fetch_consensus_report():
+    print("\n" + "="*80)
     print("Initiating automated pipeline: Querying external live endpoints...")
+    print("="*80 + "\n")
     
     mc_buys = fetch_moneycontrol_buys()
     icici_buys = fetch_icici_direct_buys()
     trendlyne_buys = fetch_trendlyne_buys()
     axis_buys = fetch_axis_direct_buys()
-    
-    print(f"Successfully scraped {len(mc_buys)} live targets from Moneycontrol.")
-    print(f"Successfully scraped {len(icici_buys)} live targets from ICICI Direct.")
-    print(f"Successfully scraped {len(trendlyne_buys)} live targets from Trendlyne.")
-    print(f"Successfully scraped {len(axis_buys)} live targets from Axis Direct.")
     
     # Combine all recommendations from all sources
     all_buys = {}
@@ -218,7 +260,45 @@ def fetch_consensus_report():
     
     # Sort by gain percentage (highest first) - highest profit first
     sorted_buys = sorted(all_buys.items(), key=lambda x: x[1]['gain'] if x[1]['gain'] else -999, reverse=True)
+    
+    print(f"\n{'='*80}")
+    print(f"Total BUY recommendations found: {len(sorted_buys)} stocks")
+    print(f"{'='*80}\n")
+    
     return sorted_buys
+
+def print_console_report(stock_recommendations):
+    """
+    Prints a formatted table of recommendations to console
+    """
+    if not stock_recommendations:
+        print("No BUY recommendations found today.")
+        return
+    
+    print("\n" + "="*130)
+    print(f"{'RANK':<6} {'STOCK NAME':<30} {'CURRENT PRICE':<18} {'TARGET PRICE':<18} {'POTENTIAL GAIN %':<18} {'SOURCE':<30} {'STATUS':<10}")
+    print("="*130)
+    
+    for idx, (stock_name, data) in enumerate(stock_recommendations, 1):
+        target_price = f"₹{data['target']:.2f}" if data['target'] else "N/A"
+        current_price = f"₹{data['current']:.2f}" if data['current'] else "N/A"
+        gain = data['gain']
+        gain_str = f"{gain}%" if gain else "N/A"
+        source = data['source']
+        
+        # Status icon based on gain percentage
+        if gain and gain >= 20:
+            status = "🔥🚀"
+        elif gain and gain >= 10:
+            status = "✅"
+        else:
+            status = "⚡"
+        
+        print(f"{idx:<6} {stock_name:<30} {current_price:<18} {target_price:<18} {gain_str:<18} {source:<30} {status:<10}")
+    
+    print("="*130)
+    print(f"Legend: 🔥🚀 High Gain (≥20%) | ✅ Moderate Gain (10-20%) | ⚡ Standard Gain (<10%)")
+    print("="*130 + "\n")
 
 def send_email(stock_recommendations):
     sender_email = os.environ.get("SENDER_EMAIL")
@@ -229,7 +309,7 @@ def send_email(stock_recommendations):
         app_password = "your_16_character_app_password"
         
     receiver = sender_email
-    subject = "📈 DAILY MARKET OPEN: All BUY Recommendations (Ranked by Profit %)"
+    subject = f"📈 DAILY MARKET OPEN: All BUY Recommendations - {datetime.now().strftime('%Y-%m-%d')} (Ranked by Profit %)"
     
     if not stock_recommendations:
         html_content = """
@@ -270,6 +350,7 @@ def send_email(stock_recommendations):
         
         html_content = f"""
         <h3>Daily Automated Broker Recommendations Report</h3>
+        <p><b>Report Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
         <p><b>Total Recommendations: {len(stock_recommendations)}</b> stocks with BUY signals ranked by potential gain % (highest first).</p>
         <table border="1" cellpadding="10" style="border-collapse:collapse; font-family:Arial, sans-serif; width:100%;">
             <tr style="background-color:#1a73e8; color:white;">
@@ -285,17 +366,19 @@ def send_email(stock_recommendations):
         </table>
         <p style="font-size:12px; color:#666; margin-top:20px;">
             <i>Data pulled from: Moneycontrol, ICICI Direct, Trendlyne, Axis Direct | Sorted by potential gain % (highest first)</i><br>
-            <i>🔥🚀 High Gain (≥20%) | ✅ Moderate Gain (10-20%) | ⚡ Standard Gain (&lt;10%)</i>
+            <i>🔥🚀 High Gain (≥20%) | ✅ Moderate Gain (10-20%) | ⚡ Standard Gain (&lt;10%)</i><br>
+            <i>Disclaimer: These are analyst recommendations. Always do your own research before investing.</i>
         </p>
         """
     
     try:
         yag = yagmail.SMTP(sender_email, app_password)
         yag.send(to=receiver, subject=subject, contents=html_content)
-        print("Success: Real-time aggregated data dispatch sent to inbox!")
+        print("✓ Success: Real-time aggregated data dispatch sent to inbox!")
     except Exception as e:
-        print(f"Failed to complete email execution routing: {e}")
+        print(f"✗ Failed to complete email execution routing: {e}")
 
 if __name__ == "__main__":
     recommendations = fetch_consensus_report()
+    print_console_report(recommendations)
     send_email(recommendations)
