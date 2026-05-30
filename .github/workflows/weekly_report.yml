@@ -20,10 +20,11 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install pandas yagmail
-            : pip install pandas yagmail beautifulsoup4 lxml requests
+        run: pip install pandas yagmail beautifulsoup4 lxml requests
 
       - name: Run Script
         run: python stock_reporter.py
-        
+        env:
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
 
