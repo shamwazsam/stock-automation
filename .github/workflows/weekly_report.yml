@@ -24,9 +24,11 @@ jobs:
 
       - name: Run Script
         run: python stock_reporter.py
+         python googlesheets.py
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
 
   dependabot-automerge:
     needs: run-report
