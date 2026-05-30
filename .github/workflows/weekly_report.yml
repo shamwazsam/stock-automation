@@ -20,10 +20,29 @@ jobs:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install pandas yagmail beautifulsoup4 lxml requests
+        run: pip install -r requirements.txt
 
       - name: Run Script
         run: python stock_reporter.py
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+
+  # This new job automatically merges Dependabot PRs if the run-report job succeeds
+  dependabot-automerge:
+    needs: run-report
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    permissions:
+      pull-requests: write
+      contents: write
+    steps:
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2.3.0
+
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
