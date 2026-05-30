@@ -1,0 +1,5 @@
+pandas
+yagmail
+beautifulsoup4
+lxml
+requests
