@@ -9,6 +9,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import json
 import os
+from tabulate import tabulate
 
 # Google Sheets Configuration
 SHEET_ID = "15-HLXriIL-25NVjDZDa81Ht_qHUowdAOvaZ59ieXNJk"
@@ -151,7 +152,10 @@ def match_ticker_and_get_price(query_name):
         "sbi": "SBIN.NS",
         "tcs": "TCS.NS",
         "infosys": "INFY.NS",
-        "wipro": "WIPRO.NS"
+        "wipro": "WIPRO.NS",
+        "axis bank": "AXISBANK.NS",
+        "maruti": "MARUTI.NS",
+        "bajaj auto": "BAJAJJ.NS"
     }
     
     clean_query = query_name.lower().strip()
@@ -168,17 +172,33 @@ def match_ticker_and_get_price(query_name):
             official_name = ticker_obj.info.get('shortName', query_name)
             return ticker_symbol, cmp, official_name
     except Exception as e:
-        print(f"⚠️ Could not fetch ticker {ticker_symbol}: {e}")
         pass
         
     return None, None, query_name
 
+def print_table(data, title):
+    """Print data in a formatted table."""
+    print(f"\n{'=' * 120}")
+    print(f"  {title}")
+    print(f"{'=' * 120}")
+    
+    if not data:
+        print("No data available")
+        return
+    
+    # Create DataFrame for better formatting
+    df = pd.DataFrame(data)
+    
+    # Print with tabulate for better formatting
+    print(tabulate(df, headers='keys', tablefmt='grid', showindex=False))
+    print()
+
 def run_live_pipeline():
     start_time = time.time()
     
-    print("=" * 90)
-    print("🚀 STOCK AUTOMATION PIPELINE STARTED")
-    print("=" * 90)
+    print("\n" + "=" * 120)
+    print("  🚀 STOCK AUTOMATION PIPELINE STARTED")
+    print("=" * 120)
     
     # Try Google Sheets first, fallback to web scraping
     client = authenticate_google_sheets()
@@ -194,12 +214,15 @@ def run_live_pipeline():
         return
 
     pipeline_report = {}
+    all_results = []
     
     print(f"\n📊 Matching tickers and checking live stock prices for {len(raw_calls)} stocks...")
+    print("-" * 120)
     successful_matches = 0
+    failed_matches = 0
     
-    for idx, item in enumerate(raw_calls[:15], 1):
-        print(f"  [{idx}] Processing: {item['search_query']}...", end=" ")
+    for idx, item in enumerate(raw_calls[:20], 1):
+        print(f"  [{idx:2d}] {item['search_query']:30s} → ", end="", flush=True)
         ticker, cmp, fine_name = match_ticker_and_get_price(item["search_query"])
         
         if cmp and ticker:
@@ -214,37 +237,69 @@ def run_live_pipeline():
                 "Ticker": ticker,
                 "Current Price": f"₹{cmp:,.2f}",
                 "Target Price": f"₹{target:,.2f}",
+                "Upside %": f"{return_pct:+.2f}%",
                 "Duration": item["duration"],
-                "Return %": f"{return_pct:+.2f}%"
+                "Broker": broker
             }
+            
+            all_results.append(row_entry)
             
             if broker not in pipeline_report:
                 pipeline_report[broker] = []
             pipeline_report[broker].append(row_entry)
-            print("✅")
+            print(f"✅ {ticker:15s} CMP: ₹{cmp:>8,.2f} | Target: ₹{target:>8,.2f} | Return: {return_pct:>7.2f}%")
         else:
-            print("❌ (Could not fetch)")
+            failed_matches += 1
+            print(f"❌ (Could not fetch price)")
 
-    # Output results
-    print(f"\n{'=' * 90}")
-    print(f"📈 RESULTS SUMMARY: {successful_matches} stocks matched out of {min(len(raw_calls), 15)}")
-    print(f"{'=' * 90}\n")
+    print("-" * 120)
     
-    if not pipeline_report:
+    # Summary section
+    print(f"\n{'=' * 120}")
+    print(f"  📈 EXECUTION SUMMARY")
+    print(f"{'=' * 120}")
+    print(f"  Total Stocks Processed: {min(len(raw_calls), 20)}")
+    print(f"  ✅ Successful Matches: {successful_matches}")
+    print(f"  ❌ Failed Matches: {failed_matches}")
+    print(f"  Success Rate: {(successful_matches / min(len(raw_calls), 20) * 100):.1f}%")
+    print(f"{'=' * 120}\n")
+    
+    if not all_results:
         print("⚠️ No stocks with valid prices found.")
         return
     
-    for broker, rows in pipeline_report.items():
-        print(f"\n{'=' * 90}")
-        print(f"📊 RECOMMENDATIONS FROM: {broker.upper()}")
-        print(f"{'=' * 90}")
-        df = pd.DataFrame(rows)
-        print(df.to_markdown(index=False))
-        print()
+    # Print overall results table
+    print_table(all_results, "📊 ALL STOCK RECOMMENDATIONS (SORTED BY UPSIDE %)")
+    
+    # Print results grouped by broker
+    for broker, rows in sorted(pipeline_report.items()):
+        print_table(rows, f"🏢 RECOMMENDATIONS FROM: {broker.upper()}")
+    
+    # Summary statistics
+    all_df = pd.DataFrame(all_results)
+    if not all_df.empty:
+        print(f"\n{'=' * 120}")
+        print(f"  📈 STATISTICS")
+        print(f"{'=' * 120}")
         
-    print(f"\n{'=' * 90}")
+        # Extract numeric values for statistics
+        try:
+            upside_values = [float(x.strip().rstrip('%')) for x in all_df['Upside %']]
+            current_prices = [float(x.replace('₹', '').replace(',', '')) for x in all_df['Current Price']]
+            target_prices = [float(x.replace('₹', '').replace(',', '')) for x in all_df['Target Price']]
+            
+            print(f"  Average Upside: {sum(upside_values)/len(upside_values):>7.2f}%")
+            print(f"  Max Upside: {max(upside_values):>7.2f}%")
+            print(f"  Min Upside: {min(upside_values):>7.2f}%")
+            print(f"  Average Current Price: ₹{sum(current_prices)/len(current_prices):>8,.2f}")
+            print(f"  Average Target Price: ₹{sum(target_prices)/len(target_prices):>8,.2f}")
+        except:
+            pass
+        
+        print(f"{'=' * 120}\n")
+        
     print(f"✅ Pipeline execution completed in {time.time() - start_time:.2f} seconds.")
-    print(f"{'=' * 90}")
+    print("=" * 120 + "\n")
 
 if __name__ == "__main__":
     run_live_pipeline()
